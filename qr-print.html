@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RASA QR 列印工具</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <style>
+    body { background: #0a0a0a; }
+    .tool-shell { width: min(1100px, calc(100% - 32px)); margin: 0 auto; padding: 34px 0 60px; }
+    .tool-header { display: flex; gap: 28px; justify-content: space-between; align-items: flex-end; }
+    .tool-header img { width: 180px; filter: invert(1) brightness(1.25); }
+    .tool-panel { margin-top: 28px; padding: 22px; border: 1px solid #333; border-radius: 20px; background: #111; }
+    .tool-grid { display: grid; grid-template-columns: 1fr 150px 150px; gap: 12px; align-items: end; }
+    .tool-grid .field { margin: 0; }
+    .tool-grid button { min-height: 52px; }
+    .sheet { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10mm 7mm; margin-top: 30px; }
+    .qr-card { break-inside: avoid; min-height: 64mm; border: 1px solid #2f2f2f; border-radius: 14px; padding: 8mm; background: #0d0d0d; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .qr-card img.logo { width: 40mm; max-height: 12mm; object-fit: contain; filter: invert(1) brightness(1.25); margin-bottom: 5mm; }
+    .qr-box { background: white; padding: 3mm; border-radius: 4mm; }
+    .qr-box img, .qr-box canvas { display: block; width: 35mm !important; height: 35mm !important; }
+    .qr-code-label { margin: 4mm 0 0; font-size: 13px; letter-spacing: .18em; font-weight: 800; }
+    .qr-help { margin: 2mm 0 0; color: #969690; font-size: 8px; text-align: center; }
+    @media (max-width: 800px) {
+      .tool-grid { grid-template-columns: 1fr; }
+      .sheet { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media print {
+      @page { size: A4 portrait; margin: 9mm; }
+      body { background: white; }
+      .no-print { display: none !important; }
+      .tool-shell { width: auto; padding: 0; }
+      .sheet { margin: 0; grid-template-columns: repeat(4, 1fr); gap: 5mm; }
+      .qr-card { min-height: 62mm; border-color: #bbb; border-radius: 3mm; background: white; color: #090909; padding: 5mm; }
+      .qr-card img.logo { filter: none; }
+      .qr-help { color: #555; }
+    }
+  </style>
+</head>
+<body>
+  <main class="tool-shell">
+    <section class="no-print">
+      <div class="tool-header">
+        <div>
+          <p class="kicker">PRINTABLE QR TOOL</p>
+          <h1>RASA 個人 QR 產生器</h1>
+        </div>
+        <img src="./assets/rasa-logo.png" alt="RASA" />
+      </div>
+
+      <div class="tool-panel">
+        <div class="tool-grid">
+          <div class="field">
+            <label for="baseUrl">已部署的網站首頁網址</label>
+            <input id="baseUrl" inputmode="url" placeholder="https://你的帳號.github.io/rasa-connect/" />
+          </div>
+          <div class="field">
+            <label for="staffPin">工作人員密碼</label>
+            <input id="staffPin" type="password" inputmode="numeric" maxlength="4" placeholder="••••" />
+          </div>
+          <button id="generateButton" class="primary-button" type="button">取得並產生 QR</button>
+        </div>
+        <button id="printButton" class="secondary-button" type="button" style="margin-top:12px;">列印／另存 PDF</button>
+      </div>
+    </section>
+
+    <section id="sheet" class="sheet" aria-live="polite"></section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4/dist/umd/supabase.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+  <script src="./config.js"></script>
+  <script>
+    const baseUrlInput = document.getElementById("baseUrl");
+    const staffPinInput = document.getElementById("staffPin");
+    const sheet = document.getElementById("sheet");
+    const generateButton = document.getElementById("generateButton");
+
+    const inferred = new URL("./", window.location.href);
+    inferred.pathname = inferred.pathname.replace(/qr-print\.html$/, "");
+    baseUrlInput.value = inferred.toString();
+
+    document.getElementById("generateButton").addEventListener("click", generate);
+    document.getElementById("printButton").addEventListener("click", () => window.print());
+
+    async function generate() {
+      let base;
+      try {
+        base = new URL(baseUrlInput.value.trim());
+      } catch {
+        alert("請輸入有效的網站網址。");
+        return;
+      }
+
+      const config = window.RASA_CONFIG || {};
+      if (!config.SUPABASE_URL?.startsWith("https://") || config.SUPABASE_URL.includes("PASTE_")) {
+        alert("請先完成 config.js 的 Supabase 設定。");
+        return;
+      }
+
+      const pin = staffPinInput.value.trim();
+      if (!pin) {
+        alert("請輸入工作人員密碼。");
+        return;
+      }
+
+      generateButton.disabled = true;
+      generateButton.textContent = "正在取得卡片資料⋯";
+
+      try {
+        const client = window.supabase.createClient(config.SUPABASE_URL, config.SUPABASE_KEY, {
+          auth: { persistSession: false, autoRefreshToken: false }
+        });
+
+        const { data, error } = await client.rpc("get_print_manifest", {
+          p_staff_pin: pin
+        });
+        if (error) throw error;
+
+        sheet.innerHTML = "";
+        for (const item of data || []) {
+          const url = new URL(base.toString());
+          url.searchParams.set("code", item.code);
+          url.searchParams.set("key", item.activation_key);
+
+          const card = document.createElement("article");
+          card.className = "qr-card";
+
+          const logo = document.createElement("img");
+          logo.className = "logo";
+          logo.src = "./assets/rasa-logo.png";
+          logo.alt = "RASA";
+
+          const box = document.createElement("div");
+          box.className = "qr-box";
+
+          const label = document.createElement("p");
+          label.className = "qr-code-label";
+          label.textContent = item.code;
+
+          const help = document.createElement("p");
+          help.className = "qr-help";
+          help.textContent = "掃描以建立或開啟個人小卡";
+
+          card.append(logo, box, label, help);
+          sheet.appendChild(card);
+
+          new QRCode(box, {
+            text: url.toString(),
+            width: 180,
+            height: 180,
+            colorDark: "#080808",
+            colorLight: "#ffffff",
+            correctLevel: QRCode.CorrectLevel.H
+          });
+        }
+      } catch (error) {
+        const message = String(error?.message || error);
+        alert(message.includes("INVALID_STAFF_PIN") ? "工作人員密碼不正確。" : "無法取得 QR 清單，請檢查 Supabase 設定。");
+      } finally {
+        generateButton.disabled = false;
+        generateButton.textContent = "取得並產生 QR";
+      }
+    }
+  </script>
+</body>
+</html>
