@@ -1209,3 +1209,38 @@ h2 {
 [hidden] {
   display: none !important;
 }
+/* ===== RASA CONNECT：工作人員籌碼獎勵功能 ===== */
+
+.staff-preview-grid {
+  display: grid;
+  gap: 0;
+  margin: 4px 0 16px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.staff-preview-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px 15px;
+  color: rgba(255, 255, 255, 0.64);
+  font-size: 13px;
+}
+
+.staff-preview-row + .staff-preview-row {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.staff-preview-row strong {
+  flex: 0 0 auto;
+  color: #fff;
+  font-size: 15px;
+}
+
+.staff-token-actions {
+  margin-top: 4px;
+}
